@@ -22,6 +22,10 @@ final：修饰不可变字段，线程安全性
 
 工厂设计模式3种：
 
+- 简单工厂:一个工厂，一个产品。接口，interface shape；实现，implement circle、square、rectangle；工厂类， ShapeFactory 、getshape 、class newInstance();测试类，new工厂对象，依据传入的shape类型调用不同的实现方法
+- 工厂方法：多个工厂，多个产品。
+- 抽象工厂：多个工厂，多种产品，工厂也需要选择，抽象类
+
 lock内部原理：
 
 包装类：初始值是否为null；缓存
@@ -90,6 +94,24 @@ ArrayList:泛型数组,先add,set(位置,值),get(i)=a[i]
 变参：Object...args,参数列表最后
 
 枚举enum：ordinal——int，toString——string
+
+# 第六章 接口、内部类
+
+内部类：
+
+string.intern()函数使用：它先看常量池中有没有，没有的话才创建然后复制引用，有的话直接用
+
+# 第七章 异常
+
+异常分类：
+
+RuntimeException——类型转换错误，数组越界，访问null指针
+
+IOException——文件不存在，找不到名称的资源
+
+
+
+
 
 
 
