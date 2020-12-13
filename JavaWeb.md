@@ -44,7 +44,7 @@ web服务器 ：容器，能够部署WEB程序，目录结构分别是干什么�
 
 端口号：应用程序唯一标识
 
-找端口号：cmd--netstate -ano--pid进程id--任务管理器--找到进程杀死
+找端口号：cmd--netstat -ano--pid进程id--任务管理器--找到进程杀死
 
 访问路径：虚拟目录，可以修改文件夹名称
 
@@ -114,3 +114,62 @@ web服务器 ：容器，能够部署WEB程序，目录结构分别是干什么�
 
 
 
+8. el表达式
+
+   ${表达式}，能够从域对象中取值判断
+
+9. jstl 
+
+   通过taglib命令导入标签库，简化java代码
+
+   if choose foreach
+
+### 补充笔记：
+
+1. Servlet 执行原理：
+
+- 当浏览器发送请求给服务器时，Tomcat解析URL，获取资源路径
+- 在web.xml中的配置，查找是否有对应的<URL pattern>标签
+- 有则寻找到对应的全类名<servlet-class>
+- 通过反射class.forName(),解析字节码文件进内存，创建Servlet对象NewInstance()
+- 调用Service()方法——执行具体处理
+
+2. 转发和重定向
+
+   - 重定向：地址栏发生变化，URL资源跳转，可以访问任意资源，两次请求，不能使用request域对象共享数据
+
+   ![image-20201213212651697](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20201213212651697.png)
+
+    - 转发：地址栏不发生变化，只能访问内部资源，一次请求
+
+      ![image-20201213215725516](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20201213215725516.png)
+
+      
+
+3. 响应状态码：
+
+   1XX：传输未完成，服务器接收客户端消息未完成
+
+   200：成功
+
+   3XX：重定向302，304访问缓存
+
+   4XX：客户端错误  404资源不存在，405找不到对应方法
+
+   500：服务器错误
+
+4. Cookie和Session
+
+   Cookie保存在客户端浏览器中，一般4KB大小，通过响应头中添加Cookie（set-cookie：msg=hello），再次访问时在请求头中也有此Cookie信息（cookie：msg=hello），可以设置失效时间setMaxAge
+
+   ![image-20201213233644378](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20201213233644378.png)
+
+   Session保存在服务器中，可以存储很多内容，相对安全实现原理其实是基于Cookie的，在第一次会话时生成JSESSIONID=238472736放到响应头中的set-cookie中，再次请求时在请求头中带入，保证同一个Session对象。可以通过cookie设置时间来解决浏览器关闭造成的Session失效，Tomcat做了Session的钝化和活化。
+
+   ![image-20201213233948624](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20201213233948624.png)
+
+   session的销毁：服务器关闭；invalidate；默认失效时间30min<session-timeout>
+
+5. JSP原理：本质是个servlet,Tomcat内部service方法将HTML标签通过out对象输出到页面上
+
+![image-20201214000051637](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20201214000051637.png)
