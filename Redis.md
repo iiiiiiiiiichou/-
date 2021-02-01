@@ -13,7 +13,8 @@
   - 结构：
     - 一级缓存L1 cache：对CPU性能影响较大，静态RAM组成，容量32--256KB
     - 二级缓存L2 cache ：内部和外部两种芯片，内部速率=主频，外部=0.5主频。容量128KB--3M
-
+  - 三级缓存L3 cache：
+    
   - 工作原理：CPU要读取数据，先从1级缓存中找，找到就立即读取并送给CPU处理。没找到，就从内存中读取并送给CPU，同时把数据所在的数据块调入缓存中。
   - 磁盘缓存的作用：
     - 预读取，将连续的几个簇中的数据读到缓存中
@@ -23,6 +24,21 @@
 - 分布式锁：
   - 概念：为了解决分布式环境下出现的并发问题，需要使用分布式锁
   - 区别：普通锁是多个线程间的并发问题，通过lock和synchronized等，使用内存标记来解决问题。分布式锁是多个设备间的多个进程下的并发问题，所以必须借助Redis等中间件实现。
+
+### 安装
+
+- yum 安装 输入 yum install redis ,显示没有软件包，先安装epel仓库yum install epel-release,安装完成后重新安装Redis
+- 配置：
+  - 需要启动Redis服务才行，systemctl start redis
+  - 开机启动 ，systemctl enable redis
+  - 修改配置文件，/etc/redis.conf 。主要修改端口号 port 、密码 requirepass （用户名默认auth）、保护模式protected-mode no
+- 连接 ：在usr/bin 目录下，执行Redis-cli -h 127.0.0.1 -p 6379
+
+![img](C:\Users\fanfan\AppData\Local\Temp\企业微信截图_16118181491616.png)
+
+- 练习基本指令
+
+  
 
 ### 基础
 
@@ -64,7 +80,7 @@
   > incr len --len为整数，自增 范围为signed long 最大最小 42亿——0
   "6" --数字加1
   > decr len --自减 和自增一样
-  "5"
+"5"
   ```
 
 - **list** ：
@@ -132,3 +148,84 @@
     - 快速链表
     - 压缩链表
 
+- **hash:**
+
+  - 概念：相当于hashmap,是无序字典。内部数组+链表结构，当出现哈希碰撞时，将碰撞的元素用链表相连。数组叫桶，初始值为2^4=16,每个元素有一个唯一的hash值，将hash值与桶取余即存放位置。
+
+    ![image-20210125235215541](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210125235215541.png)
+
+  - 区别：hashmap可以存放任意类型数据，hash存放的值是字符串;rehash的方式不同,redis是渐进式，java是一次性。![image-20210126000017645](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210126000017645.png)
+
+  渐进式就是同时存在两个hash结构，一大一小，然后后续再慢慢迁移（怎么迁移？）
+
+  - 用途：存放用户信息，和字符串相比不用一次性序列化全部信息，可以每个字段单独存储
+  - 命令：
+
+  ```
+  hset       // 设置散列值
+  hget       // 获取散列值
+  hmset      // 设置多对散列值
+  hmget      // 获取多对散列值
+  hsetnx     // 如果散列已经存在，则不设置（防止覆盖key）
+  hkeys      // 返回所有keys
+  hvals      // 返回所有values
+  hlen       // 返回散列包含域（field）的数量
+  hdel       // 删除散列指定的域（field）
+  hexists    // 判断是否存在
+  ```
+
+  ```lua
+  -- 需要注意两个点
+  hset key field value --当value中字符串有空格时，必须加引号
+hincrby key field increment -- 用法和incr差不多，但是后面必须添加增量值（每次增加几），否则报错
+  ```
+  
+
+![20210131172729](C:\Users\fanfan\Documents\Scrshot\20210131172729.png)
+
+- **set**
+
+  - 相当于hashset ,内部无序但是唯一，可以存储中奖号码
+
+  ```xml
+  sadd        // 添加元素
+  srem        // 删除元素 
+  sismember   // 判断是否为set的一个元素
+  smembers    // 返回集合所有的成员
+  sdiff       // 返回一个集合和其他集合的差异
+  sinter      // 返回几个集合的交集
+  sunion      // 返回几个集合的并集
+  ```
+
+  ```lua
+  -- 无序性，添加是a,b,c,d,查看时候是b,d,c,a
+  -- srem 和 spop区别：srem是删除具体元素，srem key member [member...];spop是从最上面弹出几个元素，spop key [count]
+  --scard key 长度，相当于count
+  -- 集合之间的交并运算
+  ```
+
+  ![20210131230158](C:\Users\fanfan\Documents\Scrshot\20210131230158.png)
+
+- **zset**
+
+  - 有序集合，类似于sortedset和hashmap结合，内部实现是跳表结构。具有set的唯一性，又有score作为权重排序。
+  - 可以用来存储粉丝列表，id是唯一的，根据关注时间进行排序。还可以用来存储学生成绩，血生id唯一，按照分数排序。
+
+  ```xml
+  ZADD         // 添加有序集合
+  ZREM         // 删除有序集合中的元素
+  ZREVRANGE    // 倒叙
+  ZRANGE       // 正序
+  ZCARD        // 有序集合的基数
+  ZSCORE       // 返回成员的值
+  ZRANK        // 返回有序集合中成员的排名
+  ```
+
+  ```lua
+  -- 需要注意的是score 分数是双精度的，可能会后面很多位
+  -- 开始位置和结束位置 0和-1
+  ```
+
+  ![20210131234050](C:\Users\fanfan\Documents\Scrshot\20210131234050.png)
+
+  - 跳表：分层级，引用数组的二分查找法插入元素，从L0到L31
