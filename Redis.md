@@ -229,3 +229,116 @@ hincrby key field increment -- 用法和incr差不多，但是后面必须添加
   ![20210131234050](C:\Users\fanfan\Documents\Scrshot\20210131234050.png)
 
   - 跳表：分层级，引用数组的二分查找法插入元素，从L0到L31
+  
+  
+
+### 应用1：分布式锁
+
+![image-20210201215103664](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210201215103664.png)
+
+- 为了解决分布式多个客户端多个进程之间的并发问题。简单来说就是通过Redis 中间件来get和set数据，然后在Redis中添加锁，保证数据安全。
+
+  ```lua
+  setnx lock: codehole true
+  ```
+
+- 有锁就要释放锁，为了避免死锁，需要添加过期时间。
+
+  ```lua 
+  expire lock:codehole 5 --5秒过期
+  del lock:codehole
+  ```
+
+  ![image-20210201215652631](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210201215652631.png)
+
+- 但是可能过期时间没到线程就被杀死，锁还没有释放，会造成死锁，setnx 和
+  expire 指令可以一起执行。
+
+  ```lua
+  set lock:codehole true ex 5 nx 
+  del lock:codehole
+  ```
+
+- **超时问题**：若加锁和释放锁之间的逻辑执行时间过长，超出了锁的超时限制，会出现异常，需要人工干预。
+
+- **可重入性**：当前持有锁的线程能够再次请求加锁。需要对客户端的 set 方法进行包装，使用线程的 Threadlocal 变量存储当前持有锁的计数。
+
+  - ReentrantLock: 也是一种可重入锁，基于AQS(AbstractQueuedSynchronizer)实现，分为公平锁和非公平锁。
+
+    - 公平锁：多个线程按顺序获取锁，等待队列中第一个线程获取锁，其他阻塞。CPU开销大。
+
+    - 非公平锁：所有线程直接获取锁，谁获得是谁的。有可能一直获取不到。
+
+      ![img](https://awps-assets.meituan.net/mit-x/blog-images-bundle-2018b/7f749fc8.png)
+
+  - ThreadLocal: 一个变量，只能在当前线程实例内使用，用于本线程内方法共享。
+
+    ```java
+    public class SessionHandler {
+    
+      public static ThreadLocal<Session> session = ThreadLocal.<Session>withInitial(() -> new Session());
+    
+      @Data
+      public static class Session {
+        private String id;
+        private String user;
+        private String status;
+      }
+    
+      public String getUser() {
+        return session.get().getUser();
+      }
+    
+      public String getStatus() {
+        return session.get().getStatus();
+      }
+    
+      public void setStatus(String status) {
+        session.get().setStatus(status);
+      }
+    
+      public static void main(String[] args) {
+        new Thread(() -> {
+          SessionHandler handler = new SessionHandler();
+          handler.getStatus();
+          handler.getUser();
+          handler.setStatus("close");
+          handler.getStatus();
+        }).start();
+      }
+    }
+    ```
+
+### 应用2：延时队列
+
+- 专业消息队列中间件
+  - Rabbitmq
+  - Kafka
+
+- Redis 消息队列：没有ack,适合只有一组消费者对于可靠性一般的消息队列。
+
+![image-20210202210431501](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210202210431501.png)
+
+​	通过list数据结构实现消息队列，rpush\lpush进入，lpop\rpop出队列
+
+- blpop/brpop：blocking 阻塞，解决空队列一直读的问题（sleep会导致延迟）。可能出现一直阻塞，然后空闲连接，服务器主动断开减少闲置资源，blpop/brpop会报错。
+
+- 延时队列：
+  - 通过zset结构实现：消息的字符串格式作为zse的值value，到期时间作为score，用多个线程轮询zset，获取到期任务处理。
+  - 多个线程争抢任务，通过zrem来确定谁处理。if (jedis.zrem(queueKey, s) > 0)  // 抢到了
+
+### 应用3：位图
+
+- 定义：用来存储大量的bool数据，比如一个人365天的签到，签到为1 ，没签为0，只需要365个位（bit）,46个字节。内容就是byte数组，还是普通的字符串。
+
+- 使用：设置单个的bit值  。'h' ASCII码的二进制为01101000，设置的时候从高位到低位数1。
+
+  - 零存整取：按位存，取出整个字符串。
+
+  ​        ![20210202215425](C:\Users\fanfan\Documents\Scrshot\20210202215425.png)            ![20210202214911](C:\Users\fanfan\Documents\Scrshot\20210202214911.png)
+
+  - 整存零取：存一个字符，按位取值。
+
+    ![20210202215929](C:\Users\fanfan\Documents\Scrshot\20210202215929.png)
+
+- 若为不可打印字符，显示16进制形式。
