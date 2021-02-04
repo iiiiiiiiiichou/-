@@ -342,3 +342,21 @@ hincrby key field increment -- 用法和incr差不多，但是后面必须添加
     ![20210202215929](C:\Users\fanfan\Documents\Scrshot\20210202215929.png)
 
 - 若为不可打印字符，显示16进制形式。
+
+- 统计和查找：bitcount，统计范围内所有1的个数；bitpos,查找范围内第一个0或1.[start, end]为字节索引，所以获取的值都是8bit，需要和8进行换算。用法包括签到，第一次签到或者第一次断签之类的。
+
+  ![20210204203559](C:\Users\fanfan\Documents\Scrshot\20210204203559.png)
+
+- 魔术指令：bitfield——最多可以同时操作64位，包括get、set、incrby三个命令
+
+  其中incrby可能会出现溢出，overflow 包含默认折返处理wrap（抛弃溢出位）、选择失败fail（报错不执行）、饱和截断sat（保留最大值或最小值），但是只有一条指令。
+
+  ![20210204205627](C:\Users\fanfan\Documents\Scrshot\20210204205627.png)
+
+  
+
+### 应用4：HyperLogLog
+
+- hyperloglog?
+- uv?
+- pv?
