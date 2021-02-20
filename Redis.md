@@ -14,7 +14,7 @@
     - 一级缓存L1 cache：对CPU性能影响较大，静态RAM组成，容量32--256KB
     - 二级缓存L2 cache ：内部和外部两种芯片，内部速率=主频，外部=0.5主频。容量128KB--3M
   - 三级缓存L3 cache：
-    
+
   - 工作原理：CPU要读取数据，先从1级缓存中找，找到就立即读取并送给CPU处理。没找到，就从内存中读取并送给CPU，同时把数据所在的数据块调入缓存中。
   - 磁盘缓存的作用：
     - 预读取，将连续的几个簇中的数据读到缓存中
@@ -80,7 +80,7 @@
   > incr len --len为整数，自增 范围为signed long 最大最小 42亿——0
   "6" --数字加1
   > decr len --自减 和自增一样
-"5"
+  "5"
   ```
 
 - **list** ：
@@ -177,9 +177,8 @@
   ```lua
   -- 需要注意两个点
   hset key field value --当value中字符串有空格时，必须加引号
-hincrby key field increment -- 用法和incr差不多，但是后面必须添加增量值（每次增加几），否则报错
+  hincrby key field increment -- 用法和incr差不多，但是后面必须添加增量值（每次增加几），否则报错
   ```
-  
 
 ![20210131172729](C:\Users\fanfan\Documents\Scrshot\20210131172729.png)
 
@@ -229,7 +228,7 @@ hincrby key field increment -- 用法和incr差不多，但是后面必须添加
   ![20210131234050](C:\Users\fanfan\Documents\Scrshot\20210131234050.png)
 
   - 跳表：分层级，引用数组的二分查找法插入元素，从L0到L31
-  
+
   
 
 ### 应用1：分布式锁
@@ -357,6 +356,192 @@ hincrby key field increment -- 用法和incr差不多，但是后面必须添加
 
 ### 应用4：HyperLogLog
 
-- hyperloglog?
-- uv?
-- pv?
+- 概念：
+  - hyperloglog:一种数据结构，提供不精确的去重计数方案，标准误差0.81%
+  - uv：unique visitor 独立访问用户，不同的账号
+  - pv：page views 页面浏览量或点击量，用户每次刷新就算一次
+  - ip：Internet protocol 互联网访问协议，一般同一个电脑有一个ip。
+
+- 使用：pfadd 、pfcount、pfmerge
+
+```lua
+--pfadd key element[element]增加元素
+--pfcount key 统计个数
+--pfmerge 合并两个里面的数据
+```
+
+- 实现原理：
+
+  - [伯努利试验](https://juejin.cn/post/6844903785744056333)：随机数的个数N和最大低位连续零的个数K之间存在N=2^K关系，通
+    过这个 K 值可以估算出随机数的数量。但是当N处于2^K与2^(K+1)之间时，估算值都是2^K。 
+
+  ![image-20210209154819730](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210209154819730.png)
+
+  - loglog优化估算：上面的误差比较大，所以通过平均数来减小误差。比如说以100个随机数为一轮，取4轮，就是(k1+k2+k3+k4)/4
+  - 调和平均数：倒数的平均，能够减少极限值（离群值）的影响。4/(1/k1+1/k2+1/k3+1/k4)
+
+  ![image-20210209192442453](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210209192442453.png)
+
+  - 桶：用来表示平均的次数，越大越精确。
+
+- 为什么内存占用12KB：
+
+  使用2^14=16384个桶，每个桶的maxbits需要6个bits来存储，最大可表示maxbits=63,总的占用内存为2^14 * 6 / 8 = 12k。
+
+### 布隆过滤器
+
+- bloomfilter:不那么精确的可以去重的set结构，布隆过滤器对于已经见过的元素肯定不会误判，它只会误判那些没见过的元素。
+
+- 安装：[官网](https://github.com/RedisBloom/RedisBloom)下载的为2.2.4最新版本。由于之前安装的Redis为yum安装的3.2版本，需要升级（我是卸载后重新安装的）yum remove redis __[redis官网](https://redis.io/download)下载为6.0.10版本，
+
+- 问题：按照[教程](https://blog.csdn.net/u013030276/article/details/88350641)添加loadmodule后每次启动后并不能生效，bf.add每次都显示没有命令，寻找解决办法后，修改Redis.conf里面的protectmode为no,注释掉bind 127
+
+- 命令：bf.add 和 bf.exists 增加多个或者判断多个的时候变成bf.madd和bf.mexists
+
+- 参数：**key,error_rate,init_size**
+
+  - 作用：error_rate 表示错误率，错误率越低，需要的存储空间就越大；init_size表示预计存放的元素数量，超过此值误判率会上升。默认的 error_rate 是 0.01，默认的 initial_size 是 100
+
+  - 设定方式：（1）bf.reserve显式的设定
+
+    ```lua
+    127.0.0.1:6379> bf.reserve bfs 0.001 100
+    OK
+    ```
+
+    （2）通过配置文件loadmodule，将后两个参数直接设定。
+
+    ```lua
+    loadmodule /usr/local/redisbloomfilter/RedisBloom/redisbloom.so ERROR_RATE 0.001 INIT
+    ```
+
+- 原理：位数组和多个无偏hash。add的时候将key通过hash算法算得hash值，作为索引值和数组大小取模得到一个位置置1，多个hash后得到多个位置都为1。exists查找时，同样用这个过程，查找这些位置是否为1，只要有一个为零的话就说明不存在。但是都为1不一定是同一个key,可能是多个key导致。极端太密集的使所有的位置都为1。
+
+  ![image-20210214211705789](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210214211705789.png)
+
+- 空间占用：
+  - 布隆过滤器有两个参数，第一个是预计元素的数量 n，第二个是错误率 f。公式根据这
+    两个输入得到两个输出，第一个输出是位数组的长度 l，也就是需要的存储空间大小 (bit)，
+    第二个输出是 hash 函数的最佳数量 k。hash 函数的数量也会直接影响到错误率，最佳的数
+    量会有最低的错误率。
+    k=0.7*(l/n) # 约等于
+    f=0.6185^(l/n) # ^ 表示次方计算，也就是 math.pow
+  - 引入参数 t 表示实际元素和预计元素的倍数 t表示当实际元素超出预计元素时，错误率变化
+    f=(1-0.5^t)^k # 极限近似，k 是 hash 函数的最佳数量
+  - 根据公式，当错误率为1%，需要9.6bit，其中置1的为
+
+- 应用：nosql数据库内包含布隆过滤器结构；新闻推送和爬虫url去重；邮箱系统，误判的垃圾邮件。
+
+###  简单限流
+
+- 限流：由于处理能力问题或者业务要求，在一定时间内必须限制请求次数。
+- 简单限流算法：通过zset结构中的score，记录时间戳，key记录行为，value只需要不重复，也可以是时间戳。 过期时间设置为时间段+1
+
+### 漏斗限流
+
+- 概念：漏斗的剩余空间就代表着当前行为可以持续进行的数量，漏嘴的流水速率代表着系统允许该行为的最大频率。
+
+- 算法：定义一个漏斗，所占内存固定，就是其容量。当灌水开始前，判断是否还有空间，没有的话makespace，等待腾出空间。
+
+- 实现：通过Redis-cell模块，如果被拒绝了，就需要丢弃或重试。cl.throttle 指令重试时间直接取返回结果数组的第四个值进行 sleep 即可，如果不想阻塞线程，也可以异步定时任务来重试。
+
+  ![image-20210216215958349](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210216215958349.png)
+
+
+
+### GEOHash
+
+- 概念：一种距离排序算法，位置本来由经纬度表示，此算法映射到一条线上，距离越近的直线上的距离也越近。将地球经纬度当成一个平面，通过细分网格将坐标进行整数编码。编码方式为二刀法，geohash算法将二刀法得到的整数值继续进行base32（0-9，a-z，去掉ailo）编码变成字符串，经纬度用52位整数表示
+- 原理：实际上是zset结构，将距离整数值放score中。
+- 使用：
+
+```lua
+--六个指令geoadd向集合中添加经度坐标、纬度坐标和元素、geodist计算集合中两个元素的距离、geopos 获取元素位置，由于一二维有损转换，会有一点不同、geohash获取元素的hash值，为经纬度编码字符串，通过官网能够直接定位、georadiusbymember获取指定元素附近的其他元素；
+geoadd company 116.489033 40.007669 meituan // 1
+geoadd company 116.48105 39.996794 juejin 116.562108 39.787602 jd //2
+geodist company juejin meituan km //"1.3878"
+geopos company juejin //1) "116.48104995489120483" 2) "39.99679348858259686"
+geohash company juejin // "wx4gd94yjn0"
+georadiusbymember company juejin 20km count 3 asc //1) "juejin"2) "meituan"3) "jd"
+georadiusbymember company == ireader可以替换成经纬度116.514202 39.905409 == 20 km withcoord withdist withhash count 3 desc //1)
+1) "ireader"
+2) "0.0000"
+3) (integer) 4069886008361398
+4) 1) "116.5142020583152771"
+2) "39.90540918662494363"
+2)
+1) "juejin"
+2) "10.5501"
+3) (integer) 4069887154388167
+4) 1) "116.48104995489120483"
+2) "39.99679348858259686"
+3) 
+1) "meituan"
+2) "11.5748"
+3) (integer) 4069887179083478
+4) 1) "116.48903220891952515"
+2) "40.00766997707732031"
+```
+
+![20210217104847](C:\Users\fanfan\Documents\Scrshot\20210217104847.png)
+
+![20210217111642](C:\Users\fanfan\Documents\Scrshot\20210217111642.png)
+
+
+
+- 注意：单个 key 对应的数据量不宜超过 1M，当数据量过亿时需要按照省份等拆分
+
+### scan
+
+- 应用场景：需要在Redis无数实例中找到符合要求的key,提供的keys能够满足正则表达式寻找的功能，但是具有两个缺点：1.没有offset和limit，满足条件的全部都会被展示。2.keys算法是遍历算法，复杂度O(n)，当keys很多的情况下会造成Redis卡顿，因为单线程，阻塞其他指令。
+
+- 特点：1.通过游标来分步进行，不会阻塞线程，虽然也是复杂度O(n)。
+
+  2.也有匹配功能，具有limit参数，限制最大条数，但是实际条数会小于等于
+
+  3.返回的结果可能会有重复，需要手动去重。
+
+  4.单次返回的结果是空的并不意味着遍历结束，而要看返回的游标值是否为零;
+
+  5.遍历过程中有数据修改的话，能不能遍历到不确定。
+
+- 使用：
+
+```lua
+--scan 参数提供了三个参数，第一个是 cursor 整数值，第二个是 key 的正则模式，第三个是遍历的 limit hint。第一次遍历时，cursor 值为 0，然后将返回结果中第一个整数值作为下一次遍历的cursor。一直遍历到返回的 cursor 值为 0 时结束
+scan cursor match keys count limit
+scan 0 match key99* count 1000  // 1) "13976"2) 1) "key9911"2) "key9974"
+scan 13976 match key99* count 1000 // 1) "1996"2) 1) "key9982"2) "key9997"
+```
+
+- 字典结构：类似于hashmap，数组＋链表。一维数组大小2^n,扩容加倍。scan 指令返回的游标就是第一维数组的位置索引，我们将这个位置索引称为槽 (slot)。之所以返回的结果可能多可能少，是因为不是所有的槽位上都会挂接链表，有多有少，将每个槽上的符合匹配的返回。
+
+![image-20210220195947469](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210220195947469.png)
+
+- scan遍历顺序：高位进位加法，在扩容缩容时能够避免槽位的遍历重复和遗漏。rehash 就是将元素的hash 值对数组长度进行取模运算，因为长度变了，所以每个元素挂接的槽位可能也发生了变
+  化。又因为数组的长度是 2^n 次方，所以取模运算等价于位与操作。假设开始槽位的二进制数是 xxx，那么该槽位中的元素将被 rehash 到0xxx 和 1xxx(xxx+8) 中。 如果字典长度由 16 位扩容到 32 位，那么对于二进制槽位xxxx 中的元素将被 rehash 到 0xxxx 和 1xxxx(xxxx+16) 中。
+
+![image-20210220200928117](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210220200928117.png)
+
+- 注意：大key,内存开销大分配和回收容易卡顿，通过redis-cli -h 127.0.0.1 -p 7001 –-bigkeys -i 0.1指令查找大key，然后重新设计。
+
+### 线程IO模型
+
+- 单线程！！！
+  - 快：数据存在内存中，内存级别的运算所以快。
+  - 并发：多路复用（事件轮循）
+
+- 非阻塞IO： 在套接字对象上提供了一个选项 Non_Blocking，当打开时，直接读写到缓冲区就完事了，读写多少都和缓冲区有关，不用阻塞线程了。
+
+  ![image-20210220203453696](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210220203453696.png)
+
+- 事件轮循：解决读写到一半缓冲区满了的问题，通过select函数不断询问处理
+
+  ![image-20210220202530124](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210220202530124.png)
+
+- 指令队列：客户端的指令通过队列来排队进行顺序处理，先到先服务。
+
+- 响应队列：Redis 服务器通过响应队列来将指令的返回结果回复给客户端。 如果队列为空，那么意味着连接暂时处于空闲状态，不需要去获取写事件，也就是可以将当前的客户端描述符从 write_fds 里面移出来。等到队列有数据了，再将描述符放进去。
+
+- 定时任务：Redis 的定时任务会记录在一个称为最小堆的数据结构中。这个堆中，最快要执行的任
+  务排在堆的最上方。在每个循环周期，Redis 都会将最小堆里面已经到点的任务立即进行处理。处理完毕后，将最快要执行的任务还需要的时间记录下来，这个时间就是 select 系统调用的timeout 参数。
