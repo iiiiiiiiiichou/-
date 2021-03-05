@@ -659,4 +659,98 @@ scan 13976 match key99* count 1000 // 1) "1996"2) 1) "key9982"2) "key9997"
 
   ![image-20210301225637936](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210301225637936.png)
 
+- 使用：通过sentinel方法（discover_master（myMaster））返回ip加端口号，通过socket建立连接进行数据存储。sentinel端口26379，Redis 6379
+
 - 监测原理：进行主从地址轮循，如果连接地址改变，则断开连接别的。
+
+### codis
+
+- 概念：Redis集群的代理中间件，go语言开发，客户端请求时通过codis获取Redis实例。
+
+  ![image-20210303233943864](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210303233943864.png)
+
+- 分片原理：维护key和Redis实例间的映射关系。将所有key分为1024个槽位，具体的key经过crc32运算计算hash值，然后除以1024取余得到此key的具体槽位。每个槽位都会唯一映射到后面的多个 Redis 实例之一，Codis 会在内存维护槽位和Redis 实例的映射关系。
+
+- 同步槽位：由于映射关系保存在内存中无法同步，需要一个分布式配置存储数据库专门用来持久化槽位关系，使用的是[zookeeper](https://www.cnblogs.com/ultranms/p/9585191.html)
+
+  ![image-20210303234624538](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210303234624538.png)
+
+- 扩容：当一个Redis内存不够是需要扩容，Codis 对 Redis 进行了改造，增加了 SLOTSSCAN 指令，可以遍历指定 slot 下所有的key，然后分一半key到另一个实例中。
+- 缺点：1.为了支持扩容，不支持事务，单个value不能过大，最好不超过1M。2.增加了代理作为中转层，增加了网络开销。3.使用了zookeeper中间件，增加部署运维成本。
+
+### cluster
+
+- [安装](https://blog.csdn.net/zwy0724/article/details/106833678/)：
+  - 安装节点5个![20210305222036](C:\Users\fanfan\Documents\Scrshot\20210305222036.png)
+  - 安装ruby（未）
+  - 测试
+
+- 概念：Redis 作者自己提供的 Redis 集群化方案。去中心化的，如图所示，该集群有三个 Redis 节点组成，每个节点负责整个集群的一部分数据，每个节点负责的数据多少可能不一样。这三个节点相互连接组成一个对等的集群，它们之间通过一种特殊的二进制协议相互交互集群信息。
+
+![image-20210304002817107](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210304002817107.png)
+
+- 原理：将所有数据划分为16384个slots,每个节点负责一部分槽位，信息直接保存在节点上。当客户端连接时，会得到一份槽位配置信息。
+
+- 槽位定位算法：1.默认会对 key 值使用 crc32 算法进行 hash 得到一个整数值，然后用这个整数
+  值对 16384 进行取模来得到具体槽位。2.允许用户强制某个 key 挂在特定槽位上，通过在 key 字符串里面嵌入 tag 标记，这就可以强制 key 所挂在的槽位等于 tag 所在的槽位。
+
+- 跳转：若客户端请求的key不在此节点上，需要跳转到其他节点。指令moved 槽位号 地址。减号，表示该指令是一个错误消息。
+
+  GET x
+  -MOVED 3999 127.0.0.1:6381
+
+- 迁移：
+
+  - 概念：从一个旧节点迁移到新节点，包括槽位和key。
+
+  - 过程：将槽位设置中间过渡状态，然后遍历所有key一个一个迁移。每个 key的迁移过程是以原节点作为目标节点的「客户端」，原节点对当前的 key 执行 dump 指令得到序列化内容，然后通过「客户端」向目标节点发送指令 restore 携带序列化的内容作为参数，目标节点再进行反序列化就可以将内容恢复到目标节点的内存中，然后返回「客户端」OK，原节点「客户端」收到后再把当前节点的 key 删除掉。
+  - 注意：1.迁移过程是同步的，在目标节点执行 restore 指令到原节点删除 key 之间，原节点的主线程会处于阻塞状态，所以当key很大的话就会影响使用。2.迁移导致客户端访问流程改变:新旧节点都有此槽位部分key数据。客户端访问旧节点——>存在数据处理，不存在返回重定向指令-ASK targetNodeAddr——>客户端向重定向节点发送asking指令（避免重定向循环）——>发送原来指令。
+
+- 容错：cluster-require-full-coverage 参数允许部分节点故障；主节点故障切换到从节点。
+
+- 网络抖动：突然之前不可访问，很快又恢复正常。为了避免这种情况导致的频繁的主从切换。有两种选项1. cluster-node-timeout，表示当某个节点持续 timeout 的时间失联时，才可以认定该节点出现故障；2. cluster-slave-validity-factor 作为倍乘系数来放大这个超时时间来宽松容错的紧急程度。如果这个系数为零，那么主从切换是不会抗拒网络抖动的。
+
+- 可能下线（possibly Fail）和确定下线（fail）
+
+  当一个节点认为某个节点失联，不能确定是否这个节点真的断开，需要大部分节点都连不上，大家通过广播通知出来协商，汇总大家的消息才能最终确定一个节点是否为真的下线，需要进行主从切换。
+
+- 使用：构造 StrictRedisCluster实例，传入节点地址和是否要将返回结果中的 byte 数组转换成 unicode编码。不支持事务。
+- 感知变化：槽位迁移，通过两个特殊的 error 指令，一个是 moved，一个是 asking，可能经过反复重试，重新修改槽位节点映射表。集群变更：目标节点挂掉了，返回ConnectionError；人为修改集群信息，移除了节点，返回ClusterDown。
+
+### Stream
+
+- 概念：一个数据结构，支持多播的可持久化的消息队列，借鉴了[kafka](https://www.cnblogs.com/qingyunzong/p/9004509.html)。
+
+- 结构：包括消费组（多个消费者），消息队列（多条消息（包括游标id和内容））![image-20210305212850209](C:\Users\fanfan\AppData\Roaming\Typora\typora-user-images\image-20210305212850209.png)
+
+  - 消息id：整数-整数 毫秒时间戳-产生的第几个消息
+  - 消息内容：hash结构键值对
+  - 命令：
+
+  ```lua  
+  xadd codehole * name laoqian age 30 --增加消息，*表示id自动生成，key-value内容
+  >1527849609889-0 -- 生成的消息 ID
+  xdel codehole 1527849609889-0 --删除消息，不改变长度，但是内容看不见
+  xrange codehole - +  --获取整个消息列表,过滤已经删除的消息 最小到最大
+  1) 1527849609889-0
+  2) 1) "name"
+  2) "laoqian"
+  3) "age"
+  4) "30"
+  xlen codehole --获取消息长度
+  del codehole --删除整个stream
+  ```
+
+- 独立消费：相当于普通的list，不需要消费组，能够通过xread指令直接取出消息内容。
+
+  ```lua
+  --消费数量、key、消费位置
+  xread count 2 streams codehole 0-0 --从 Stream 头部读取两条消息
+  xread count 1 streams codehole $ --从 Stream 尾部读取一条消息
+  xread block 0 count 1 streams codehole $ --block阻塞时间后返回nil，0表示一直阻塞直到有消息进入，1000表示1秒后返回nil
+  ```
+
+  
+
+
+
