@@ -750,7 +750,73 @@ scan 13976 match key99* count 1000 // 1) "1996"2) 1) "key9982"2) "key9997"
   xread block 0 count 1 streams codehole $ --block阻塞时间后返回nil，0表示一直阻塞直到有消息进入，1000表示1秒后返回nil
   ```
 
-  
+- 创建消费组
 
+  [radix-tree-keys --基数树键](https://blog.csdn.net/weixin_40318210/article/details/102531829)
 
+  [radix-tree-nodes--基数树节点](https://blog.csdn.net/gdj0001/article/details/80136221)
 
+  ```lua
+  -- xgroup create
+  xgroup create codehole cg1 0-0 --创建消费组cg1 从最后开始消费
+  xinfo stream codehole  --获取stream消息
+  1) length --消息长度
+  2) (integer) 3 # 共 3 个消息
+  3) radix-tree-keys --基数树键
+  4) (integer) 1
+  5) radix-tree-nodes --基数树节点
+  6) (integer) 2
+  7) groups
+  8) (integer) 2 # 两个消费组
+  9) first-entry # 第一个消息
+  10) 1) 1527851486781-0
+  2) 1) "name"
+  2) "laoqian"
+  3) "age"
+  4) "30"
+  11) last-entry # 最后一个消息
+  12) 1) 1527851498956-0
+  2) 1) "name"
+  2) "xiaoqian"
+  3) "age"
+  4) "1"
+  xinfo groups codehole  --获取消费组消息
+  1) 1) name
+  2) "cg1"
+  3) consumers
+  4) (integer) 0 # 该消费组还没有消费者
+  5) pending
+  6) (integer) 0 # 该消费组没有正在处理的消息
+  ```
+
+- 消费过程：
+
+  由上面的消费组消息可以看到，消费组包含消费者，还有保存正在处理的消息结构。消费组内部消费过程：消费者根据消息id消费（消费组名称、消费者名称、消息id），若没有消息，阻塞等待，有消息来了进入正在处理消息结构PEL中，处理完毕后通过xack通知服务器移除。
+
+- 分区 Partition
+
+  将不同的消息放在不同区域， 通过增加新的 Stream 可以做到简单的动态调整。
+
+### info指令
+
+- 概念： Redis 内部一系列运行参数，获取Redis运行状态
+
+- 九块：
+
+  1、Server 服务器运行的环境参数
+  2、Clients 客户端相关信息
+  3、Memory 服务器运行内存统计数据
+  4、Persistence 持久化信息
+  5、Stats 通用统计数据
+  6、Replication 主从复制相关信息
+  7、CPU CPU 使用情况
+  8、Cluster 集群信息
+  9、KeySpace 键值对统计数量信息
+
+### 分布式锁升级 redlock
+
+在集群环境下，可能出现获取锁后节点挂掉的情况，新的节点内部没有锁，给了其他人，出现不安全。使用redlock创建多个Redis实例，每次加锁和删除锁都通知过半的节点，没问题后执行。
+
+### 过期策略
+
+- 贪心策略？
